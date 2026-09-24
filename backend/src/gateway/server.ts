@@ -57,11 +57,16 @@ export class GatewayServer {
       ws.on("close", () => {
         const session = this.sessions.get(ws);
         if (session?.channelId) {
-          // Notify room members that user left
-          this.broadcastToVoiceChannel(session.channelId, ws, {
-            op: GatewayOpcode.DISPATCH,
-            t: GatewayEvent.VOICE_STATE_UPDATE,
-            d: { userId: session.userId, channelId: null },
+          // Notify all clients that user left voice channel
+          this.broadcastEvent(GatewayEvent.VOICE_STATE_UPDATE, {
+            userId: session.userId,
+            channelId: null,
+            oldChannelId: session.channelId,
+            user: {
+              id: session.userId,
+              username: session.username,
+              avatar: session.avatar,
+            },
           });
         }
         this.sessions.delete(ws);
@@ -99,6 +104,15 @@ export class GatewayServer {
           }
         }
 
+        // Collect current voice states for all channels
+        const voiceStates: Record<string, string[]> = {};
+        for (const [_, s] of this.sessions.entries()) {
+          if (s.userId && s.channelId) {
+            if (!voiceStates[s.channelId]) voiceStates[s.channelId] = [];
+            voiceStates[s.channelId].push(s.userId);
+          }
+        }
+
         this.send(ws, {
           op: GatewayOpcode.DISPATCH,
           s: 1,
@@ -108,6 +122,7 @@ export class GatewayServer {
             user: { id: session.userId, username: session.username, avatar: session.avatar },
             users: onlineUsers,
             messages: Object.fromEntries(this.channelHistory.entries()),
+            voiceStates,
             guilds: [],
           },
         });
@@ -135,37 +150,28 @@ export class GatewayServer {
         const oldChannel = session.channelId;
         session.channelId = data.channelId || undefined;
 
+        const userPayload = {
+          id: session.userId,
+          username: session.username,
+          avatar: session.avatar,
+        };
+
         if (oldChannel && oldChannel !== data.channelId) {
-          // Notify peers in the previous voice channel that user left
-          this.broadcastToVoiceChannel(oldChannel, ws, {
-            op: GatewayOpcode.DISPATCH,
-            t: GatewayEvent.VOICE_STATE_UPDATE,
-            d: {
-              userId: session.userId,
-              channelId: null,
-              user: {
-                id: session.userId,
-                username: session.username,
-                avatar: session.avatar,
-              },
-            },
+          // Broadcast to ALL clients that user left oldChannel
+          this.broadcastEvent(GatewayEvent.VOICE_STATE_UPDATE, {
+            userId: session.userId,
+            channelId: null,
+            oldChannelId: oldChannel,
+            user: userPayload,
           });
         }
 
         if (data.channelId) {
-          // 1. Tell all existing participants in this voice channel that a new peer joined
-          this.broadcastToVoiceChannel(data.channelId, ws, {
-            op: GatewayOpcode.DISPATCH,
-            t: GatewayEvent.VOICE_STATE_UPDATE,
-            d: {
-              userId: session.userId,
-              channelId: data.channelId,
-              user: {
-                id: session.userId,
-                username: session.username,
-                avatar: session.avatar,
-              },
-            },
+          // 1. Broadcast to ALL clients that user joined data.channelId
+          this.broadcastEvent(GatewayEvent.VOICE_STATE_UPDATE, {
+            userId: session.userId,
+            channelId: data.channelId,
+            user: userPayload,
           });
 
           // 2. Send the newly joined user the list of existing peers in this channel

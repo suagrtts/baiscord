@@ -14,6 +14,7 @@ export function useVoiceClient(wsRef: React.RefObject<WebSocket | null>) {
     setVoiceChannel,
     setSpeaking,
     updateVoiceMembers,
+    setMemberVoiceChannel,
   } = useAppStore();
 
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -241,6 +242,7 @@ export function useVoiceClient(wsRef: React.RefObject<WebSocket | null>) {
       }
 
       setVoiceChannel(channelId);
+      setMemberVoiceChannel(myUserId, channelId);
     } catch (err) {
       console.error("[Voice] Microphone access error:", err);
       alert("Could not access microphone. Please allow microphone permissions in your browser.");
@@ -259,6 +261,7 @@ export function useVoiceClient(wsRef: React.RefObject<WebSocket | null>) {
       );
     }
     setVoiceChannel(null);
+    setMemberVoiceChannel(myUserId, null);
   };
 
   // Handle gateway voice signals & events
@@ -269,7 +272,11 @@ export function useVoiceClient(wsRef: React.RefObject<WebSocket | null>) {
       if (t === "VOICE_SERVER_UPDATE") {
         // We received list of existing peers in this room: create offers for each
         const peers = (d.peers as string[]) || [];
-        updateVoiceMembers(d.channelId, [myUserId, ...peers]);
+        // Place myUserId in this channel, and existing peers
+        setMemberVoiceChannel(myUserId, d.channelId);
+        for (const peerId of peers) {
+          setMemberVoiceChannel(peerId, d.channelId);
+        }
 
         for (const peerId of peers) {
           try {
@@ -295,25 +302,10 @@ export function useVoiceClient(wsRef: React.RefObject<WebSocket | null>) {
         }
       } else if (t === "VOICE_STATE_UPDATE") {
         const { channelId, userId } = d;
-        if (channelId && userId && userId !== myUserId) {
-          // A new peer joined the voice channel: update our member list
-          const currentMembers =
-            useAppStore.getState().voice.channelMembers[channelId] || [myUserId];
-          if (!currentMembers.includes(userId)) {
-            updateVoiceMembers(channelId, [...currentMembers, userId]);
-          }
-        } else if (channelId === null && userId) {
-          // Peer left the channel
-          const currentVoiceChannelId =
-            useAppStore.getState().voice.currentVoiceChannelId;
-          if (currentVoiceChannelId) {
-            const currentMembers =
-              useAppStore.getState().voice.channelMembers[currentVoiceChannelId] || [];
-            updateVoiceMembers(
-              currentVoiceChannelId,
-              currentMembers.filter((id) => id !== userId)
-            );
-          }
+        if (userId) {
+          setMemberVoiceChannel(userId, channelId || null);
+        }
+        if (channelId === null && userId) {
           if (peersRef.current[userId]) {
             peersRef.current[userId].close();
             delete peersRef.current[userId];
@@ -381,7 +373,7 @@ export function useVoiceClient(wsRef: React.RefObject<WebSocket | null>) {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [getOrCreatePeer, myUserId, updateVoiceMembers, wsRef, ensureLocalTracks]
+    [getOrCreatePeer, myUserId, updateVoiceMembers, wsRef, ensureLocalTracks, setMemberVoiceChannel]
   );
 
   // Mute / Unmute local audio track

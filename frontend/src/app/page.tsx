@@ -54,6 +54,8 @@ export default function DiscordApp() {
     setMyUserId,
     toggleMute,
     toggleDeafen,
+    setMemberVoiceChannel,
+    setAllVoiceStates,
   } = useAppStore();
 
   const [inputMessage, setInputMessage] = useState("");
@@ -193,6 +195,9 @@ export default function DiscordApp() {
                 }
               }
             }
+            if (payload.d?.voiceStates) {
+              setAllVoiceStates(payload.d.voiceStates);
+            }
           }
 
           if (payload.t === "MESSAGE_CREATE" && payload.d) {
@@ -213,17 +218,22 @@ export default function DiscordApp() {
             });
           }
 
-          if (payload.t === "VOICE_STATE_UPDATE" && payload.d?.user) {
-            const u = payload.d.user;
-            upsertUser({
-              id: u.id,
-              username: u.username,
-              discriminator: u.id.slice(-4),
-              avatar: u.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${u.username}`,
-              bannerColor: "#5865F2",
-              status: "online",
-              roles: [{ id: "r-mem", name: "Member", color: "#3498db" }],
-            });
+          if (payload.t === "VOICE_STATE_UPDATE" && payload.d) {
+            const { userId, channelId, user } = payload.d;
+            if (user) {
+              upsertUser({
+                id: user.id,
+                username: user.username,
+                discriminator: user.id.slice(-4),
+                avatar: user.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.username}`,
+                bannerColor: "#5865F2",
+                status: "online",
+                roles: [{ id: "r-mem", name: "Member", color: "#3498db" }],
+              });
+            }
+            if (userId) {
+              setMemberVoiceChannel(userId, channelId || null);
+            }
           }
 
           if (payload.t === "VOICE_SERVER_UPDATE" && payload.d?.peerUsers) {
@@ -256,7 +266,16 @@ export default function DiscordApp() {
 
     ws.onclose = () => setConnected(false);
     return () => ws.close();
-  }, [handleVoiceGatewayEvent, isAuthenticated, myUserId, setConnected, addMessage, users]);
+  }, [
+    handleVoiceGatewayEvent,
+    isAuthenticated,
+    myUserId,
+    setConnected,
+    addMessage,
+    users,
+    setMemberVoiceChannel,
+    setAllVoiceStates,
+  ]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });

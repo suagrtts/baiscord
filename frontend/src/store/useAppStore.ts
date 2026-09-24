@@ -69,6 +69,8 @@ interface AppState {
   toggleDeafen: () => void;
   setSpeaking: (userId: string, isSpeaking: boolean) => void;
   updateVoiceMembers: (channelId: string, members: string[]) => void;
+  setMemberVoiceChannel: (userId: string, newChannelId: string | null) => void;
+  setAllVoiceStates: (voiceStates: Record<string, string[]>) => void;
   logout: () => void;
 }
 
@@ -231,6 +233,36 @@ export const useAppStore = create<AppState>((set) => ({
           ...state.voice.channelMembers,
           [channelId]: members,
         },
+      },
+    })),
+  setMemberVoiceChannel: (userId, newChannelId) =>
+    set((state) => {
+      const newChannelMembers: Record<string, string[]> = {};
+      // 1. Remove userId from EVERY channel
+      for (const [chId, members] of Object.entries(state.voice.channelMembers)) {
+        newChannelMembers[chId] = members.filter((id) => id !== userId);
+      }
+      // 2. Add to newChannelId if specified
+      if (newChannelId) {
+        if (!newChannelMembers[newChannelId]) {
+          newChannelMembers[newChannelId] = [];
+        }
+        if (!newChannelMembers[newChannelId].includes(userId)) {
+          newChannelMembers[newChannelId] = [...newChannelMembers[newChannelId], userId];
+        }
+      }
+      return {
+        voice: {
+          ...state.voice,
+          channelMembers: newChannelMembers,
+        },
+      };
+    }),
+  setAllVoiceStates: (voiceStates) =>
+    set((state) => ({
+      voice: {
+        ...state.voice,
+        channelMembers: voiceStates,
       },
     })),
   setIsAuthenticated: (status) => set({ isAuthenticated: status }),
