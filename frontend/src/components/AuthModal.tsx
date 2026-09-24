@@ -27,8 +27,9 @@ export function AuthModal({ isOpen, onClose, isRequired = false }: AuthModalProp
     setError(null);
     setLoading(true);
 
-    const apiBase =
+    const rawApiBase =
       process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+    const apiBase = rawApiBase.replace(/\/+$/, "");
     const endpoint = isRegister
       ? `${apiBase}/api/auth/register`
       : `${apiBase}/api/auth/login`;
@@ -44,7 +45,25 @@ export function AuthModal({ isOpen, onClose, isRequired = false }: AuthModalProp
         body: JSON.stringify(body),
       });
 
-      const data = await res.json();
+      const contentType = res.headers.get("content-type") || "";
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let data: any = {};
+
+      if (contentType.includes("application/json")) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        if (!res.ok) {
+          if (res.status === 404) {
+            throw new Error(`Endpoint not found (404) at ${endpoint}. Please verify your backend server.`);
+          } else if (res.status === 502 || res.status === 503) {
+            throw new Error("Backend server is starting up or temporarily sleeping on Render (free tier cold start). Please wait 20 seconds and try again.");
+          } else {
+            throw new Error(text.slice(0, 100) || `Request failed with HTTP status ${res.status}`);
+          }
+        }
+      }
+
       if (!res.ok) {
         throw new Error(data.error || "Authentication failed");
       }
@@ -106,7 +125,7 @@ export function AuthModal({ isOpen, onClose, isRequired = false }: AuthModalProp
           </button>
         )}
 
-        <div className="text-center mb-6">
+        <div className="text-center mb-5">
           <h2 className="text-2xl font-bold">
             {isRegister ? "Create an account" : "Welcome back!"}
           </h2>
@@ -115,6 +134,38 @@ export function AuthModal({ isOpen, onClose, isRequired = false }: AuthModalProp
               ? "Join your friends and communities on Discord"
               : "We're so excited to see you again!"}
           </p>
+        </div>
+
+        {/* Mode Switcher Tabs */}
+        <div className="flex bg-[#1e1f22] p-1 rounded-lg mb-5">
+          <button
+            type="button"
+            onClick={() => {
+              setIsRegister(false);
+              setError(null);
+            }}
+            className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition ${
+              !isRegister
+                ? "bg-[#5865F2] text-white shadow-sm"
+                : "text-gray-400 hover:text-white"
+            }`}
+          >
+            Log In
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setIsRegister(true);
+              setError(null);
+            }}
+            className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition ${
+              isRegister
+                ? "bg-[#5865F2] text-white shadow-sm"
+                : "text-gray-400 hover:text-white"
+            }`}
+          >
+            Register
+          </button>
         </div>
 
         {error && (

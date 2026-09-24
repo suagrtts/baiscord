@@ -18,6 +18,13 @@ app.use((req, res, next) => {
     }
     next();
 });
+// Normalize repeated slashes in incoming request URLs (e.g. //api/auth -> /api/auth)
+app.use((req, res, next) => {
+    if (req.url.includes("//")) {
+        req.url = req.url.replace(/\/+/g, "/");
+    }
+    next();
+});
 // Mount Authentication & Authorization routes
 app.use("/api/auth", authRouter);
 // Health check endpoint

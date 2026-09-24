@@ -83,7 +83,7 @@ export default function DiscordApp() {
       return;
     }
 
-    const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+    const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001").replace(/\/+$/, "");
     fetch(`${apiBase}/api/auth/me`, {
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -127,11 +127,12 @@ export default function DiscordApp() {
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    const gatewayUrl =
+    const rawGatewayUrl =
       process.env.NEXT_PUBLIC_GATEWAY_URL ||
       (typeof window !== "undefined" && window.location.hostname !== "localhost"
         ? `wss://${window.location.host}`
         : "ws://localhost:3001");
+    const gatewayUrl = rawGatewayUrl.replace(/\/+$/, "");
 
     const token = typeof window !== "undefined" ? localStorage.getItem("discord_token") : "";
     const ws = new WebSocket(gatewayUrl);
