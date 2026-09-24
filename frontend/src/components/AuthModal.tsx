@@ -169,8 +169,20 @@ export function AuthModal({ isOpen, onClose, isRequired = false }: AuthModalProp
         </div>
 
         {error && (
-          <div className="mb-4 rounded bg-red-500/20 border border-red-500/40 p-2.5 text-xs text-red-200">
-            {error}
+          <div className="mb-4 rounded bg-red-500/20 border border-red-500/40 p-2.5 text-xs text-red-200 flex flex-col gap-1">
+            <span>{error}</span>
+            {error.toLowerCase().includes("already registered") && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsRegister(false);
+                  setError(null);
+                }}
+                className="text-left font-semibold text-[#00a8fc] hover:underline mt-1"
+              >
+                👉 Click here to Log In with this email instead
+              </button>
+            )}
           </div>
         )}
 
