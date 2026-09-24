@@ -3,6 +3,8 @@ import { GatewayOpcode, GatewayEvent } from "./protocol.js";
 export class GatewayServer {
     wss;
     sessions = new Map();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    channelHistory = new Map();
     heartbeatInterval = 41250; // Discord standard interval (ms)
     constructor(serverOrPort = 8080) {
         if (typeof serverOrPort === "number") {
@@ -86,6 +88,7 @@ export class GatewayServer {
                         session_id: session.sessionId,
                         user: { id: session.userId, username: session.username, avatar: session.avatar },
                         users: onlineUsers,
+                        messages: Object.fromEntries(this.channelHistory.entries()),
                         guilds: [],
                     },
                 });
@@ -178,6 +181,32 @@ export class GatewayServer {
                         });
                         break;
                     }
+                }
+                break;
+            }
+            case GatewayOpcode.DISPATCH: {
+                if (payload.t === GatewayEvent.MESSAGE_CREATE) {
+                    const data = payload.d;
+                    const author = data.author || {
+                        id: session.userId,
+                        username: session.username || "User",
+                        avatar: session.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${session.userId}`,
+                    };
+                    const messageData = {
+                        id: data.id || "msg-" + Date.now(),
+                        channelId: data.channelId,
+                        content: data.content,
+                        author,
+                        timestamp: data.timestamp || ("Today at " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })),
+                    };
+                    // Save in channel history (keep last 50 per channel)
+                    const history = this.channelHistory.get(data.channelId) || [];
+                    history.push(messageData);
+                    if (history.length > 50)
+                        history.shift();
+                    this.channelHistory.set(data.channelId, history);
+                    // Broadcast to all connected clients
+                    this.broadcastEvent(GatewayEvent.MESSAGE_CREATE, messageData);
                 }
                 break;
             }

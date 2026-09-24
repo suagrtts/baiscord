@@ -171,18 +171,33 @@ export default function DiscordApp() {
         }
 
         if (payload.op === 0) {
-          if (payload.t === "READY" && payload.d?.users) {
-            for (const u of payload.d.users) {
-              upsertUser({
-                id: u.id,
-                username: u.username,
-                discriminator: u.id.slice(-4),
-                avatar: u.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${u.username}`,
-                bannerColor: "#5865F2",
-                status: "online",
-                roles: [{ id: "r-mem", name: "Member", color: "#3498db" }],
-              });
+          if (payload.t === "READY") {
+            if (payload.d?.users) {
+              for (const u of payload.d.users) {
+                upsertUser({
+                  id: u.id,
+                  username: u.username,
+                  discriminator: u.id.slice(-4),
+                  avatar: u.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${u.username}`,
+                  bannerColor: "#5865F2",
+                  status: "online",
+                  roles: [{ id: "r-mem", name: "Member", color: "#3498db" }],
+                });
+              }
             }
+            if (payload.d?.messages) {
+              for (const [chId, msgs] of Object.entries(payload.d.messages)) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                for (const m of (msgs as any[])) {
+                  addMessage(chId, m);
+                }
+              }
+            }
+          }
+
+          if (payload.t === "MESSAGE_CREATE" && payload.d) {
+            const { channelId, id, author, content, timestamp } = payload.d;
+            addMessage(channelId, { id, author, content, timestamp });
           }
 
           if (payload.t === "USER_UPDATE" && payload.d) {
@@ -241,7 +256,7 @@ export default function DiscordApp() {
 
     ws.onclose = () => setConnected(false);
     return () => ws.close();
-  }, [handleVoiceGatewayEvent, isAuthenticated, myUserId, setConnected]);
+  }, [handleVoiceGatewayEvent, isAuthenticated, myUserId, setConnected, addMessage, users]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -251,20 +266,37 @@ export default function DiscordApp() {
     e.preventDefault();
     if (!inputMessage.trim() || !activeChannel) return;
 
+    const userProfile = users[myUserId];
+    const author = {
+      id: myUserId,
+      username: userProfile?.username || "You",
+      avatar: userProfile?.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${myUserId}`,
+    };
+
     const newMessage = {
-      id: "msg-" + Date.now(),
-      author: {
-        id: myUserId,
-        username: "You (" + myUserId.slice(-4) + ")",
-        avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${myUserId}`,
-      },
+      id: "msg-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
+      channelId: activeChannel.id,
+      author,
       content: inputMessage,
       timestamp:
         "Today at " +
         new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     };
 
+    // Optimistically add to local store
     addMessage(activeChannel.id, newMessage);
+
+    // Broadcast across realtime WebSocket gateway to all connected users
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          op: 0,
+          t: "MESSAGE_CREATE",
+          d: newMessage,
+        })
+      );
+    }
+
     setInputMessage("");
   };
 

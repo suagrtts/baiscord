@@ -176,12 +176,18 @@ export const useAppStore = create<AppState>((set) => ({
     }),
   setCurrentChannel: (channelId) => set({ currentChannelId: channelId }),
   addMessage: (channelId, message) =>
-    set((state) => ({
-      messages: {
-        ...state.messages,
-        [channelId]: [...(state.messages[channelId] || []), message],
-      },
-    })),
+    set((state) => {
+      const channelMsgs = state.messages[channelId] || [];
+      if (channelMsgs.some((m) => m.id === message.id)) {
+        return state;
+      }
+      return {
+        messages: {
+          ...state.messages,
+          [channelId]: [...channelMsgs, message],
+        },
+      };
+    }),
   setConnected: (status) => set({ connected: status }),
   setMyUserId: (userId) => set({ myUserId: userId }),
   setSelectedUserProfile: (profile) => set({ selectedUserProfile: profile }),

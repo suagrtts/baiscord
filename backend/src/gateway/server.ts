@@ -15,6 +15,8 @@ interface ClientSession {
 export class GatewayServer {
   private wss: WebSocketServer;
   private sessions = new Map<WebSocket, ClientSession>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private channelHistory = new Map<string, Array<{ id: string; channelId: string; content: string; author: any; timestamp: string }>>();
   private readonly heartbeatInterval = 41250; // Discord standard interval (ms)
 
   constructor(serverOrPort: http.Server | number = 8080) {
@@ -105,6 +107,7 @@ export class GatewayServer {
             session_id: session.sessionId,
             user: { id: session.userId, username: session.username, avatar: session.avatar },
             users: onlineUsers,
+            messages: Object.fromEntries(this.channelHistory.entries()),
             guilds: [],
           },
         });
@@ -204,6 +207,42 @@ export class GatewayServer {
             });
             break;
           }
+        }
+        break;
+      }
+
+      case GatewayOpcode.DISPATCH: {
+        if (payload.t === GatewayEvent.MESSAGE_CREATE) {
+          const data = payload.d as {
+            channelId: string;
+            content: string;
+            id?: string;
+            author?: { id: string; username: string; avatar: string };
+            timestamp?: string;
+          };
+
+          const author = data.author || {
+            id: session.userId,
+            username: session.username || "User",
+            avatar: session.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${session.userId}`,
+          };
+
+          const messageData = {
+            id: data.id || "msg-" + Date.now(),
+            channelId: data.channelId,
+            content: data.content,
+            author,
+            timestamp: data.timestamp || ("Today at " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })),
+          };
+
+          // Save in channel history (keep last 50 per channel)
+          const history = this.channelHistory.get(data.channelId) || [];
+          history.push(messageData);
+          if (history.length > 50) history.shift();
+          this.channelHistory.set(data.channelId, history);
+
+          // Broadcast to all connected clients
+          this.broadcastEvent(GatewayEvent.MESSAGE_CREATE, messageData);
         }
         break;
       }
