@@ -4,6 +4,8 @@ import bcrypt from "bcryptjs";
 import { defaultSnowflake } from "../utils/snowflake.js";
 import { Permissions, hasPermission } from "../utils/permissions.js";
 
+import { pool } from "../db/db.js";
+
 const JWT_SECRET = process.env.JWT_SECRET || "discord_super_secret_jwt_key_2026";
 
 export interface AuthUser {
@@ -15,10 +17,9 @@ export interface AuthUser {
   avatar: string;
 }
 
-// In-memory user store for instant lightweight auth without external DB dependencies
+// In-memory fallback user store (seeds Admin and Developer accounts)
 export const usersDb = new Map<string, { user: AuthUser; passwordHash: string }>();
 
-// Seed default Admin & Developer users
 const defaultPasswordHash = bcrypt.hashSync("password123", 10);
 usersDb.set("admin@discord.local", {
   passwordHash: defaultPasswordHash,
@@ -27,7 +28,7 @@ usersDb.set("admin@discord.local", {
     username: "TechLead",
     email: "admin@discord.local",
     discriminator: "0001",
-    permissions: Permissions.ADMINISTRATOR, // Full authorization
+    permissions: Permissions.ADMINISTRATOR,
     avatar: "https://api.dicebear.com/7.x/bottts/svg?seed=TechLead",
   },
 });
@@ -44,12 +45,85 @@ usersDb.set("dev@discord.local", {
   },
 });
 
+export async function findUserRecordByEmail(email: string): Promise<{ user: AuthUser; passwordHash: string } | null> {
+  try {
+    const res = await pool.query(
+      "SELECT id, username, discriminator, email, password_hash, avatar_url, permissions FROM users WHERE LOWER(email) = LOWER($1)",
+      [email]
+    );
+    if (res.rows.length > 0) {
+      const row = res.rows[0];
+      return {
+        passwordHash: row.password_hash,
+        user: {
+          id: row.id,
+          username: row.username,
+          discriminator: row.discriminator,
+          email: row.email,
+          permissions: BigInt(row.permissions || "0"),
+          avatar: row.avatar_url,
+        },
+      };
+    }
+  } catch (err) {
+    // DB not available or error, fall back to memory
+  }
+  return usersDb.get(email.toLowerCase()) || null;
+}
+
+export async function findUserById(id: string): Promise<AuthUser | null> {
+  try {
+    const res = await pool.query(
+      "SELECT id, username, discriminator, email, avatar_url, permissions FROM users WHERE id = $1",
+      [id]
+    );
+    if (res.rows.length > 0) {
+      const row = res.rows[0];
+      return {
+        id: row.id,
+        username: row.username,
+        discriminator: row.discriminator,
+        email: row.email,
+        permissions: BigInt(row.permissions || "0"),
+        avatar: row.avatar_url,
+      };
+    }
+  } catch (err) {
+    // DB not available, fall back to memory
+  }
+  const record = Array.from(usersDb.values()).find((r) => r.user.id === id);
+  return record ? record.user : null;
+}
+
+export async function saveUserToDb(user: AuthUser, passwordHash: string): Promise<void> {
+  // Always update in-memory map
+  usersDb.set(user.email.toLowerCase(), { user, passwordHash });
+  try {
+    await pool.query(
+      `INSERT INTO users (id, username, discriminator, email, password_hash, avatar_url, permissions)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, username = EXCLUDED.username`,
+      [
+        user.id,
+        user.username,
+        user.discriminator,
+        user.email.toLowerCase(),
+        passwordHash,
+        user.avatar,
+        user.permissions.toString(),
+      ]
+    );
+  } catch (err) {
+    console.warn("[DB] Could not save user to PostgreSQL, stored in-memory.", (err as Error).message);
+  }
+}
+
 export interface AuthenticatedRequest extends Request {
   user?: AuthUser;
 }
 
 // Authentication Middleware: Verifies JWT token
-export function authenticateToken(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
+export async function authenticateToken(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
   const authHeader = req.headers["authorization"];
   const token = authHeader && authHeader.split(" ")[1];
 
@@ -58,20 +132,18 @@ export function authenticateToken(req: AuthenticatedRequest, res: Response, next
     return;
   }
 
-  jwt.verify(token, JWT_SECRET, (err, decoded) => {
-    if (err || !decoded) {
-      res.status(403).json({ error: "Invalid or expired token" });
-      return;
-    }
-    const payload = decoded as { id: string; email: string; permissions: string };
-    const record = Array.from(usersDb.values()).find((r) => r.user.id === payload.id);
-    if (!record) {
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as { id: string; email: string };
+    const user = await findUserById(decoded.id);
+    if (!user) {
       res.status(401).json({ error: "User not found" });
       return;
     }
-    req.user = record.user;
+    req.user = user;
     next();
-  });
+  } catch (err) {
+    res.status(403).json({ error: "Invalid or expired token" });
+  }
 }
 
 // Authorization Middleware: Checks required bitwise permission

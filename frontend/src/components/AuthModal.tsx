@@ -6,10 +6,11 @@ import { X, Lock, Mail, User } from "lucide-react";
 
 interface AuthModalProps {
   isOpen: boolean;
-  onClose: () => void;
+  onClose?: () => void;
+  isRequired?: boolean;
 }
 
-export function AuthModal({ isOpen, onClose }: AuthModalProps) {
+export function AuthModal({ isOpen, onClose, isRequired = false }: AuthModalProps) {
   const [isRegister, setIsRegister] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -17,7 +18,7 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const { setMyUserId, upsertUser } = useAppStore();
+  const { setMyUserId, upsertUser, setIsAuthenticated } = useAppStore();
 
   if (!isOpen) return null;
 
@@ -54,6 +55,7 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
       // Update store with authenticated user
       const user = data.user;
       setMyUserId(user.id);
+      setIsAuthenticated(true);
       upsertUser({
         id: user.id,
         username: user.username,
@@ -61,7 +63,7 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
         avatar: user.avatar,
         bannerColor: "#5865F2",
         status: "online",
-        customStatus: "Logged in via JWT Auth",
+        customStatus: "Logged in via Account",
         bio: `Member since ${new Date().getFullYear()}`,
         roles: [
           {
@@ -72,7 +74,7 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
         ],
       });
 
-      onClose();
+      if (onClose) onClose();
     } catch (err: unknown) {
       if (err instanceof Error) {
         setError(err.message);
@@ -86,19 +88,23 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
 
   return (
     <div
-      onClick={onClose}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-150"
+      onClick={() => {
+        if (!isRequired && onClose) onClose();
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-150"
     >
       <div
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-[420px] rounded-lg bg-[#313338] text-white p-6 shadow-2xl border border-[#232428] relative"
       >
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 text-gray-400 hover:text-white transition"
-        >
-          <X size={20} />
-        </button>
+        {!isRequired && onClose && (
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 text-gray-400 hover:text-white transition"
+          >
+            <X size={20} />
+          </button>
+        )}
 
         <div className="text-center mb-6">
           <h2 className="text-2xl font-bold">

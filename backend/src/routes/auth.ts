@@ -7,6 +7,8 @@ import {
   generateToken,
   authenticateToken,
   requirePermission,
+  findUserRecordByEmail,
+  saveUserToDb,
   AuthenticatedRequest,
   AuthUser,
 } from "../middleware/auth.js";
@@ -22,7 +24,8 @@ authRouter.post("/register", async (req: Request, res: Response): Promise<void> 
     return;
   }
 
-  if (usersDb.has(email)) {
+  const existing = await findUserRecordByEmail(email);
+  if (existing) {
     res.status(409).json({ error: "Email is already registered" });
     return;
   }
@@ -42,13 +45,13 @@ authRouter.post("/register", async (req: Request, res: Response): Promise<void> 
   const newUser: AuthUser = {
     id: userId,
     username,
-    email,
+    email: email.toLowerCase(),
     discriminator,
     permissions: standardPermissions,
     avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${username}`,
   };
 
-  usersDb.set(email, { user: newUser, passwordHash });
+  await saveUserToDb(newUser, passwordHash);
   const token = generateToken(newUser);
 
   res.status(201).json({
@@ -70,7 +73,7 @@ authRouter.post("/login", async (req: Request, res: Response): Promise<void> => 
     return;
   }
 
-  const record = usersDb.get(email);
+  const record = await findUserRecordByEmail(email);
   if (!record) {
     res.status(401).json({ error: "Invalid email or password" });
     return;

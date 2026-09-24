@@ -1,11 +1,12 @@
+import http from "http";
 import express from "express";
 import { GatewayServer } from "./gateway/server.js";
 import { Snowflake, defaultSnowflake } from "./utils/snowflake.js";
 import { authRouter } from "./routes/auth.js";
+import { initDb } from "./db/db.js";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-const WS_PORT = process.env.WS_PORT ? parseInt(process.env.WS_PORT) : 8080;
 
 app.use(express.json());
 
@@ -35,10 +36,15 @@ app.get("/api/snowflake", (req, res) => {
   res.json({ id, generated_at: Snowflake.getTimestamp(id) });
 });
 
-// Start REST API
-app.listen(PORT, () => {
-  console.log(`[REST API] Server running on port ${PORT}`);
-});
+// Initialize database schema on startup
+initDb().catch((err) => console.error("[DB] Init failed:", err));
 
-// Start Gateway WebSocket Engine
-new GatewayServer(WS_PORT);
+// Create HTTP server supporting both Express REST API and WebSocket Gateway
+const server = http.createServer(app);
+
+// Attach Gateway WebSocket Engine to HTTP server
+new GatewayServer(server);
+
+server.listen(PORT, () => {
+  console.log(`[Server] Unified REST API and Gateway WebSocket running on port ${PORT}`);
+});

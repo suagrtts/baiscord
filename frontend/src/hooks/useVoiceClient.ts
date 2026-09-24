@@ -180,16 +180,27 @@ export function useVoiceClient(wsRef: React.RefObject<WebSocket | null>) {
           );
         }
       } else if (t === "VOICE_STATE_UPDATE") {
-        // A user joined or left
-        if (d.channelId === null && d.userId) {
-          // Peer left
-          if (peersRef.current[d.userId]) {
-            peersRef.current[d.userId].close();
-            delete peersRef.current[d.userId];
+        const { channelId, userId } = d;
+        if (channelId && userId && userId !== myUserId) {
+          // A new peer joined the voice channel: update our member list
+          const currentMembers = useAppStore.getState().voice.channelMembers[channelId] || [myUserId];
+          if (!currentMembers.includes(userId)) {
+            updateVoiceMembers(channelId, [...currentMembers, userId]);
           }
-          if (audioElementsRef.current[d.userId]) {
-            audioElementsRef.current[d.userId].remove();
-            delete audioElementsRef.current[d.userId];
+        } else if (channelId === null && userId) {
+          // Peer left the channel
+          const currentVoiceChannelId = useAppStore.getState().voice.currentVoiceChannelId;
+          if (currentVoiceChannelId) {
+            const currentMembers = useAppStore.getState().voice.channelMembers[currentVoiceChannelId] || [];
+            updateVoiceMembers(currentVoiceChannelId, currentMembers.filter((id) => id !== userId));
+          }
+          if (peersRef.current[userId]) {
+            peersRef.current[userId].close();
+            delete peersRef.current[userId];
+          }
+          if (audioElementsRef.current[userId]) {
+            audioElementsRef.current[userId].remove();
+            delete audioElementsRef.current[userId];
           }
         }
       } else if (t === "VOICE_SIGNAL") {

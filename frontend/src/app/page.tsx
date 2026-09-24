@@ -26,6 +26,7 @@ import {
   PhoneOff,
   Radio,
   LogIn,
+  LogOut,
   Menu,
   X,
 } from "lucide-react";
@@ -33,6 +34,9 @@ import {
 export default function DiscordApp() {
   const {
     myUserId,
+    isAuthenticated,
+    setIsAuthenticated,
+    logout,
     users,
     selectedUserProfile,
     setSelectedUserProfile,
@@ -56,6 +60,7 @@ export default function DiscordApp() {
   const [showMemberList, setShowMemberList] = useState(false);
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -68,38 +73,78 @@ export default function DiscordApp() {
     activeGuild?.channels[0];
   const currentMessages = (activeChannel && messages[activeChannel.id]) || [];
 
-  // Generate unique client-side userId on mount and register in users catalog
+  // 1. Check existing authentication on mount
   useEffect(() => {
-    const randomId = "u-" + Math.floor(1000 + Math.random() * 9000);
-    setMyUserId(randomId);
-    upsertUser({
-      id: randomId,
-      username: "You",
-      discriminator: randomId.slice(-4),
-      avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${randomId}`,
-      bannerColor: "#5865F2",
-      status: "online",
-      customStatus: "Exploring Discord clone!",
-      bio: "Just joined the server.",
-      roles: [{ id: "r2", name: "Developer", color: "#3498db" }],
-    });
-  }, [setMyUserId, upsertUser]);
+    const token = typeof window !== "undefined" ? localStorage.getItem("discord_token") : null;
+    if (!token) {
+      setIsAuthenticated(false);
+      setShowAuthModal(true);
+      setAuthChecked(true);
+      return;
+    }
 
-  // Connect to the Realtime Gateway WebSocket
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+    fetch(`${apiBase}/api/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error("Token expired");
+        return res.json();
+      })
+      .then((data) => {
+        const user = data.user;
+        setMyUserId(user.id);
+        setIsAuthenticated(true);
+        upsertUser({
+          id: user.id,
+          username: user.username,
+          discriminator: user.discriminator,
+          avatar: user.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.username}`,
+          bannerColor: "#5865F2",
+          status: "online",
+          customStatus: "Logged in",
+          bio: `Member since ${new Date().getFullYear()}`,
+          roles: [
+            {
+              id: "r-auth",
+              name: user.permissions === "8" ? "Admin" : "Member",
+              color: user.permissions === "8" ? "#e91e63" : "#3498db",
+            },
+          ],
+        });
+      })
+      .catch(() => {
+        localStorage.removeItem("discord_token");
+        setIsAuthenticated(false);
+        setShowAuthModal(true);
+      })
+      .finally(() => {
+        setAuthChecked(true);
+      });
+  }, [setIsAuthenticated, setMyUserId, upsertUser]);
+
+  // 2. Connect to the Realtime Gateway WebSocket once authenticated
   useEffect(() => {
+    if (!isAuthenticated) return;
+
     const gatewayUrl =
-      process.env.NEXT_PUBLIC_GATEWAY_URL || "ws://localhost:8080";
+      process.env.NEXT_PUBLIC_GATEWAY_URL ||
+      (typeof window !== "undefined" && window.location.hostname !== "localhost"
+        ? `wss://${window.location.host}`
+        : "ws://localhost:3001");
+
+    const token = typeof window !== "undefined" ? localStorage.getItem("discord_token") : "";
     const ws = new WebSocket(gatewayUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
       setConnected(true);
-      // Send IDENTIFY opcode with generated userId
+      // Send IDENTIFY opcode with user ID and token
       ws.send(
         JSON.stringify({
           op: 2,
           d: {
-            token: "sample-auth-token",
+            token: token || "sample-auth-token",
             userId: myUserId,
             properties: { os: "web", browser: "react", device: "desktop" },
           },
@@ -138,7 +183,7 @@ export default function DiscordApp() {
 
     ws.onclose = () => setConnected(false);
     return () => ws.close();
-  }, [handleVoiceGatewayEvent, myUserId, setConnected]);
+  }, [handleVoiceGatewayEvent, isAuthenticated, myUserId, setConnected]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -312,29 +357,38 @@ export default function DiscordApp() {
                 </div>
 
                 {/* Voice Channel Connected Members */}
-                {channel.type === "voice" &&
-                  voice.currentVoiceChannelId === channel.id && (
-                    <div className="pl-6 pr-2 py-1 space-y-1">
-                      <div className="flex items-center space-x-2">
-                        <div
-                          className={`w-6 h-6 rounded-full border-2 overflow-hidden flex items-center justify-center transition-colors ${
-                            voice.speakingUsers.has(myUserId)
-                              ? "border-green-400 bg-green-500/20"
-                              : "border-transparent bg-slate-700"
-                          }`}
-                        >
-                          <img
-                            src={`https://api.dicebear.com/7.x/bottts/svg?seed=${myUserId}`}
-                            alt="Avatar"
-                            className="w-full h-full"
-                          />
+                {channel.type === "voice" && (
+                  <div className="pl-6 pr-2 py-0.5 space-y-1">
+                    {(voice.channelMembers[channel.id] || []).map((memberId) => {
+                      const isMe = memberId === myUserId;
+                      const memberUser = users[memberId];
+                      const memberName = isMe ? "You" : memberUser?.username || `User (${memberId.slice(-4)})`;
+                      const memberAvatar = memberUser?.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${memberId}`;
+                      const isSpeaking = voice.speakingUsers.has(memberId);
+
+                      return (
+                        <div key={memberId} className="flex items-center space-x-2 py-0.5">
+                          <div
+                            className={`w-6 h-6 rounded-full border-2 overflow-hidden flex items-center justify-center transition-colors ${
+                              isSpeaking
+                                ? "border-green-400 bg-green-500/20"
+                                : "border-transparent bg-slate-700"
+                            }`}
+                          >
+                            <img
+                              src={memberAvatar}
+                              alt={memberName}
+                              className="w-full h-full"
+                            />
+                          </div>
+                          <span className="text-xs text-gray-200 truncate">
+                            {memberName} {isMe && voice.isMuted && "(Muted)"}
+                          </span>
                         </div>
-                        <span className="text-xs text-gray-200 truncate">
-                          You {voice.isMuted && "(Muted)"}
-                        </span>
-                      </div>
-                    </div>
-                  )}
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -404,13 +458,23 @@ export default function DiscordApp() {
             >
               <Headphones size={18} />
             </button>
-            <button
-              onClick={() => setShowAuthModal(true)}
-              title="Account / Log In"
-              className="p-1 hover:bg-[#35373c] hover:text-[#5865F2] rounded transition-colors"
-            >
-              <LogIn size={18} />
-            </button>
+            {isAuthenticated ? (
+              <button
+                onClick={logout}
+                title="Log Out"
+                className="p-1 hover:bg-[#35373c] hover:text-red-400 rounded transition-colors"
+              >
+                <LogOut size={18} />
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowAuthModal(true)}
+                title="Account / Log In"
+                className="p-1 hover:bg-[#35373c] hover:text-[#5865F2] rounded transition-colors"
+              >
+                <LogIn size={18} />
+              </button>
+            )}
             <button className="p-1 hover:bg-[#35373c] hover:text-gray-200 rounded">
               <Settings size={18} />
             </button>
@@ -632,8 +696,11 @@ export default function DiscordApp() {
 
       {/* 5. Authentication & Authorization Modal */}
       <AuthModal
-        isOpen={showAuthModal}
-        onClose={() => setShowAuthModal(false)}
+        isOpen={showAuthModal || (!isAuthenticated && authChecked)}
+        isRequired={!isAuthenticated}
+        onClose={() => {
+          if (isAuthenticated) setShowAuthModal(false);
+        }}
       />
     </div>
   );

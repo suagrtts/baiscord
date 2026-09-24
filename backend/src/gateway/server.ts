@@ -1,3 +1,4 @@
+import http from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { GatewayOpcode, GatewayEvent, GatewayPayload, HelloPayload } from "./protocol.js";
 
@@ -14,10 +15,15 @@ export class GatewayServer {
   private sessions = new Map<WebSocket, ClientSession>();
   private readonly heartbeatInterval = 41250; // Discord standard interval (ms)
 
-  constructor(port = 8080) {
-    this.wss = new WebSocketServer({ port });
+  constructor(serverOrPort: http.Server | number = 8080) {
+    if (typeof serverOrPort === "number") {
+      this.wss = new WebSocketServer({ port: serverOrPort });
+      console.log(`[Gateway] Realtime Gateway listening on standalone port ${serverOrPort}`);
+    } else {
+      this.wss = new WebSocketServer({ server: serverOrPort });
+      console.log(`[Gateway] Realtime Gateway attached to unified HTTP server`);
+    }
     this.setupListeners();
-    console.log(`[Gateway] Realtime Gateway listening on port ${port}`);
   }
 
   private setupListeners(): void {

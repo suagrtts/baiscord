@@ -46,6 +46,7 @@ export interface VoiceState {
 
 interface AppState {
   myUserId: string;
+  isAuthenticated: boolean;
   selectedUserProfile: UserProfile | null;
   users: Record<string, UserProfile>;
   currentGuildId: string;
@@ -60,6 +61,7 @@ interface AppState {
   addMessage: (channelId: string, message: Message) => void;
   setConnected: (status: boolean) => void;
   setMyUserId: (userId: string) => void;
+  setIsAuthenticated: (status: boolean) => void;
   setSelectedUserProfile: (profile: UserProfile | null) => void;
   upsertUser: (user: UserProfile) => void;
   setVoiceChannel: (channelId: string | null) => void;
@@ -67,10 +69,12 @@ interface AppState {
   toggleDeafen: () => void;
   setSpeaking: (userId: string, isSpeaking: boolean) => void;
   updateVoiceMembers: (channelId: string, members: string[]) => void;
+  logout: () => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
   myUserId: "u-1001",
+  isAuthenticated: false,
   selectedUserProfile: null,
   users: {
     "u-1001": {
@@ -223,4 +227,18 @@ export const useAppStore = create<AppState>((set) => ({
         },
       },
     })),
+  setIsAuthenticated: (status) => set({ isAuthenticated: status }),
+  logout: () => {
+    localStorage.removeItem("discord_token");
+    set({
+      isAuthenticated: false,
+      voice: {
+        currentVoiceChannelId: null,
+        isMuted: false,
+        isDeafened: false,
+        speakingUsers: new Set(),
+        channelMembers: {},
+      },
+    });
+  },
 }));

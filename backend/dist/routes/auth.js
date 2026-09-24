@@ -2,7 +2,7 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { defaultSnowflake } from "../utils/snowflake.js";
 import { Permissions } from "../utils/permissions.js";
-import { usersDb, generateToken, authenticateToken, requirePermission, } from "../middleware/auth.js";
+import { generateToken, authenticateToken, requirePermission, findUserRecordByEmail, saveUserToDb, } from "../middleware/auth.js";
 export const authRouter = Router();
 // POST /api/auth/register
 authRouter.post("/register", async (req, res) => {
@@ -11,7 +11,8 @@ authRouter.post("/register", async (req, res) => {
         res.status(400).json({ error: "username, email, and password are required" });
         return;
     }
-    if (usersDb.has(email)) {
+    const existing = await findUserRecordByEmail(email);
+    if (existing) {
         res.status(409).json({ error: "Email is already registered" });
         return;
     }
@@ -27,12 +28,12 @@ authRouter.post("/register", async (req, res) => {
     const newUser = {
         id: userId,
         username,
-        email,
+        email: email.toLowerCase(),
         discriminator,
         permissions: standardPermissions,
         avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${username}`,
     };
-    usersDb.set(email, { user: newUser, passwordHash });
+    await saveUserToDb(newUser, passwordHash);
     const token = generateToken(newUser);
     res.status(201).json({
         message: "Registration successful",
@@ -50,7 +51,7 @@ authRouter.post("/login", async (req, res) => {
         res.status(400).json({ error: "Email and password are required" });
         return;
     }
-    const record = usersDb.get(email);
+    const record = await findUserRecordByEmail(email);
     if (!record) {
         res.status(401).json({ error: "Invalid email or password" });
         return;
