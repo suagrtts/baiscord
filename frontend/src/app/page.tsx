@@ -26,6 +26,8 @@ import {
   PhoneOff,
   Radio,
   LogIn,
+  Menu,
+  X,
 } from "lucide-react";
 
 export default function DiscordApp() {
@@ -51,7 +53,8 @@ export default function DiscordApp() {
   } = useAppStore();
 
   const [inputMessage, setInputMessage] = useState("");
-  const [showMemberList, setShowMemberList] = useState(true);
+  const [showMemberList, setShowMemberList] = useState(false);
+  const [showMobileSidebar, setShowMobileSidebar] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -165,13 +168,14 @@ export default function DiscordApp() {
   const handleChannelClick = (channel: { id: string; type: "text" | "voice" }) => {
     if (channel.type === "voice") {
       if (voice.currentVoiceChannelId === channel.id) {
-        // Already connected
         return;
       }
       joinVoiceChannel(channel.id);
     } else {
       setCurrentChannel(channel.id);
     }
+    // Auto-close mobile drawer upon selecting a channel
+    setShowMobileSidebar(false);
   };
 
   const currentVoiceChannel = activeGuild?.channels.find(
@@ -179,56 +183,73 @@ export default function DiscordApp() {
   );
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#313338] text-gray-200 select-none">
-      {/* 1. Server Sidebar */}
-      <div className="flex flex-col items-center py-3 w-[72px] bg-[#1e1f22] space-y-2 z-20">
+    <div className="flex h-screen w-screen overflow-hidden bg-[#313338] text-gray-200 select-none relative">
+      {/* Mobile Backdrop for Navigation Drawer */}
+      {showMobileSidebar && (
         <div
-          onClick={() => setCurrentGuild("1")}
-          className="relative group flex items-center justify-center w-12 h-12 rounded-3xl hover:rounded-2xl bg-[#5865F2] text-white font-bold transition-all duration-200 cursor-pointer"
-        >
-          <span className="text-xl">D</span>
-        </div>
+          onClick={() => setShowMobileSidebar(false)}
+          className="fixed inset-0 z-40 bg-black/60 md:hidden backdrop-blur-xs transition-opacity"
+        />
+      )}
 
-        <div className="w-8 h-[2px] bg-[#35363c] rounded-full my-1" />
+      {/* 1. Server Sidebar & Channels Sidebar Container */}
+      <div
+        className={`fixed inset-y-0 left-0 z-50 flex h-full transition-transform duration-200 ease-in-out md:static md:translate-x-0 ${
+          showMobileSidebar ? "translate-x-0 shadow-2xl" : "-translate-x-full md:translate-x-0"
+        }`}
+      >
+        {/* 1. Server Sidebar */}
+        <div className="flex flex-col items-center py-3 w-[72px] bg-[#1e1f22] space-y-2 flex-shrink-0 z-20">
+          <div
+            onClick={() => {
+              setCurrentGuild("1");
+              setShowMobileSidebar(false);
+            }}
+            className="relative group flex items-center justify-center w-12 h-12 rounded-3xl hover:rounded-2xl bg-[#5865F2] text-white font-bold transition-all duration-200 cursor-pointer"
+          >
+            <span className="text-xl">D</span>
+          </div>
 
-        {guilds.map((guild) => {
-          const isActive = guild.id === currentGuildId;
-          return (
-            <div
-              key={guild.id}
-              onClick={() => setCurrentGuild(guild.id)}
-              className="relative group flex items-center justify-center cursor-pointer"
-            >
+          <div className="w-8 h-[2px] bg-[#35363c] rounded-full my-1" />
+
+          {guilds.map((guild) => {
+            const isActive = guild.id === currentGuildId;
+            return (
               <div
-                className={`absolute left-0 w-1 bg-white rounded-r-full transition-all duration-200 ${
-                  isActive
-                    ? "h-10"
-                    : "h-2 group-hover:h-5 opacity-0 group-hover:opacity-100"
-                }`}
-              />
-              <div
-                className={`flex items-center justify-center w-12 h-12 text-sm font-semibold transition-all duration-200 ${
-                  isActive
-                    ? "rounded-2xl bg-[#5865F2] text-white"
-                    : "rounded-3xl hover:rounded-2xl bg-[#313338] text-gray-300 hover:bg-[#5865F2] hover:text-white"
-                }`}
+                key={guild.id}
+                onClick={() => setCurrentGuild(guild.id)}
+                className="relative group flex items-center justify-center cursor-pointer"
               >
-                {guild.name.substring(0, 2).toUpperCase()}
+                <div
+                  className={`absolute left-0 w-1 bg-white rounded-r-full transition-all duration-200 ${
+                    isActive
+                      ? "h-10"
+                      : "h-2 group-hover:h-5 opacity-0 group-hover:opacity-100"
+                  }`}
+                />
+                <div
+                  className={`flex items-center justify-center w-12 h-12 text-sm font-semibold transition-all duration-200 ${
+                    isActive
+                      ? "rounded-2xl bg-[#5865F2] text-white"
+                      : "rounded-3xl hover:rounded-2xl bg-[#313338] text-gray-300 hover:bg-[#5865F2] hover:text-white"
+                  }`}
+                >
+                  {guild.name.substring(0, 2).toUpperCase()}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
 
-        <div className="flex items-center justify-center w-12 h-12 rounded-3xl hover:rounded-2xl bg-[#313338] hover:bg-[#23a55a] text-[#23a55a] hover:text-white transition-all duration-200 cursor-pointer">
-          <Plus size={24} />
+          <div className="flex items-center justify-center w-12 h-12 rounded-3xl hover:rounded-2xl bg-[#313338] hover:bg-[#23a55a] text-[#23a55a] hover:text-white transition-all duration-200 cursor-pointer">
+            <Plus size={24} />
+          </div>
+          <div className="flex items-center justify-center w-12 h-12 rounded-3xl hover:rounded-2xl bg-[#313338] hover:bg-[#23a55a] text-[#23a55a] hover:text-white transition-all duration-200 cursor-pointer">
+            <Compass size={24} />
+          </div>
         </div>
-        <div className="flex items-center justify-center w-12 h-12 rounded-3xl hover:rounded-2xl bg-[#313338] hover:bg-[#23a55a] text-[#23a55a] hover:text-white transition-all duration-200 cursor-pointer">
-          <Compass size={24} />
-        </div>
-      </div>
 
-      {/* 2. Channels Sidebar */}
-      <div className="flex flex-col w-60 bg-[#2b2d31] border-r border-[#1f2023]/40">
+        {/* 2. Channels Sidebar */}
+        <div className="flex flex-col w-60 bg-[#2b2d31] border-r border-[#1f2023]/40 flex-shrink-0">
         {/* Guild Header */}
         <div className="flex items-center justify-between px-4 h-12 border-b border-[#1f2023] font-semibold text-white shadow-sm">
           <span className="truncate">{activeGuild?.name}</span>
@@ -396,18 +417,29 @@ export default function DiscordApp() {
           </div>
         </div>
       </div>
+    </div>
 
       {/* 3. Main Chat Area */}
-      <div className="flex-1 flex flex-col bg-[#313338] h-full">
+      <div className="flex-1 flex flex-col bg-[#313338] h-full w-full min-w-0">
         {/* Chat Top Bar */}
-        <div className="flex items-center justify-between px-4 h-12 border-b border-[#1f2023] shadow-sm bg-[#313338]">
-          <div className="flex items-center space-x-2">
-            <Hash size={24} className="text-gray-400" />
-            <span className="font-semibold text-white">{activeChannel?.name}</span>
+        <div className="flex items-center justify-between px-3 md:px-4 h-12 border-b border-[#1f2023] shadow-sm bg-[#313338]">
+          <div className="flex items-center space-x-2 min-w-0">
+            {/* Mobile Hamburger Drawer Toggle */}
+            <button
+              onClick={() => setShowMobileSidebar(true)}
+              className="p-1 -ml-1 text-gray-300 hover:text-white md:hidden rounded hover:bg-[#35373c] transition-colors"
+              title="Open Navigation"
+            >
+              <Menu size={22} />
+            </button>
+            <Hash size={22} className="text-gray-400 flex-shrink-0" />
+            <span className="font-semibold text-white truncate text-sm md:text-base">
+              {activeChannel?.name}
+            </span>
           </div>
-          <div className="flex items-center space-x-4 text-gray-400">
-            <Bell size={20} className="hover:text-gray-200 cursor-pointer" />
-            <Pin size={20} className="hover:text-gray-200 cursor-pointer" />
+          <div className="flex items-center space-x-2 md:space-x-4 text-gray-400 flex-shrink-0">
+            <Bell size={20} className="hidden sm:block hover:text-gray-200 cursor-pointer" />
+            <Pin size={20} className="hidden sm:block hover:text-gray-200 cursor-pointer" />
             <Users
               size={20}
               onClick={() => setShowMemberList(!showMemberList)}
@@ -415,7 +447,7 @@ export default function DiscordApp() {
                 showMemberList ? "text-white" : "hover:text-gray-200"
               }`}
             />
-            <div className="relative flex items-center">
+            <div className="relative hidden md:flex items-center">
               <input
                 type="text"
                 placeholder="Search"
@@ -423,8 +455,8 @@ export default function DiscordApp() {
               />
               <Search size={14} className="absolute right-2 text-gray-400" />
             </div>
-            <Inbox size={20} className="hover:text-gray-200 cursor-pointer" />
-            <HelpCircle size={20} className="hover:text-gray-200 cursor-pointer" />
+            <Inbox size={20} className="hidden sm:block hover:text-gray-200 cursor-pointer" />
+            <HelpCircle size={20} className="hidden sm:block hover:text-gray-200 cursor-pointer" />
           </div>
         </div>
 
@@ -485,14 +517,14 @@ export default function DiscordApp() {
             </div>
 
             {/* Message Input Box */}
-            <div className="px-4 pb-6 pt-1">
+            <div className="px-2 sm:px-4 pb-3 sm:pb-6 pt-1">
               <form
                 onSubmit={handleSendMessage}
-                className="relative flex items-center bg-[#383a40] rounded-lg px-4 py-2.5"
+                className="relative flex items-center bg-[#383a40] rounded-lg px-3 py-2 sm:px-4 sm:py-2.5"
               >
                 <button
                   type="button"
-                  className="p-1.5 rounded-full bg-[#4e5058] hover:bg-[#6d6f78] text-white mr-3 flex-shrink-0"
+                  className="p-1.5 rounded-full bg-[#4e5058] hover:bg-[#6d6f78] text-white mr-2 sm:mr-3 flex-shrink-0"
                 >
                   <Plus size={16} />
                 </button>
@@ -501,7 +533,7 @@ export default function DiscordApp() {
                   value={inputMessage}
                   onChange={(e) => setInputMessage(e.target.value)}
                   placeholder={`Message #${activeChannel?.name || "channel"}`}
-                  className="bg-transparent flex-1 focus:outline-none text-sm text-white placeholder-gray-500"
+                  className="bg-transparent flex-1 focus:outline-none text-sm text-white placeholder-gray-500 min-w-0"
                 />
                 <div className="flex items-center space-x-2 text-gray-400 ml-2">
                   <Smile size={20} className="hover:text-gray-200 cursor-pointer" />
@@ -523,49 +555,69 @@ export default function DiscordApp() {
 
           {/* Member List Sidebar */}
           {showMemberList && (
-            <div className="w-60 bg-[#2b2d31] border-l border-[#1f2023]/40 p-3 overflow-y-auto space-y-4">
-              <div>
-                <span className="text-[11px] font-bold uppercase tracking-wider text-gray-400 px-2">
-                  Online — {Object.keys(users).length}
-                </span>
-                <div className="mt-2 space-y-1">
-                  {Object.values(users).map((user) => (
-                    <div
-                      key={user.id}
-                      onClick={() => setSelectedUserProfile(user)}
-                      className="flex items-center space-x-3 px-2 py-1.5 rounded-md hover:bg-[#35373c] cursor-pointer group transition-colors"
-                    >
-                      <div className="relative flex-shrink-0">
-                        <img
-                          src={user.avatar}
-                          alt={user.username}
-                          className="w-8 h-8 rounded-full bg-slate-700"
-                        />
-                        <div
-                          className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-[#2b2d31] ${
-                            user.status === "online"
-                              ? "bg-green-500"
-                              : user.status === "idle"
-                              ? "bg-amber-500"
-                              : "bg-red-500"
-                          }`}
-                        />
-                      </div>
-                      <div className="flex flex-col text-left truncate">
-                        <span className="text-sm font-medium text-gray-300 group-hover:text-white truncate">
-                          {user.username}
-                        </span>
-                        {user.customStatus && (
-                          <span className="text-[11px] text-gray-400 truncate">
-                            {user.customStatus}
+            <>
+              {/* Mobile Backdrop for Member List */}
+              <div
+                onClick={() => setShowMemberList(false)}
+                className="fixed inset-0 z-40 bg-black/60 md:hidden backdrop-blur-xs transition-opacity"
+              />
+
+              <div className="fixed inset-y-0 right-0 z-50 w-64 bg-[#2b2d31] border-l border-[#1f2023]/40 p-3 overflow-y-auto space-y-4 shadow-2xl md:static md:w-60 md:shadow-none transition-transform">
+                <div className="flex items-center justify-between px-2 md:hidden pb-2 border-b border-[#1f2023]">
+                  <span className="text-xs font-bold uppercase text-gray-300">Members</span>
+                  <button
+                    onClick={() => setShowMemberList(false)}
+                    className="p-1 text-gray-400 hover:text-white rounded"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+                <div>
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-gray-400 px-2">
+                    Online — {Object.keys(users).length}
+                  </span>
+                  <div className="mt-2 space-y-1">
+                    {Object.values(users).map((user) => (
+                      <div
+                        key={user.id}
+                        onClick={() => {
+                          setSelectedUserProfile(user);
+                          setShowMemberList(false);
+                        }}
+                        className="flex items-center space-x-3 px-2 py-1.5 rounded-md hover:bg-[#35373c] cursor-pointer group transition-colors"
+                      >
+                        <div className="relative flex-shrink-0">
+                          <img
+                            src={user.avatar}
+                            alt={user.username}
+                            className="w-8 h-8 rounded-full bg-slate-700"
+                          />
+                          <div
+                            className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-[#2b2d31] ${
+                              user.status === "online"
+                                ? "bg-green-500"
+                                : user.status === "idle"
+                                ? "bg-amber-500"
+                                : "bg-red-500"
+                            }`}
+                          />
+                        </div>
+                        <div className="flex flex-col text-left truncate">
+                          <span className="text-sm font-medium text-gray-300 group-hover:text-white truncate">
+                            {user.username}
                           </span>
-                        )}
+                          {user.customStatus && (
+                            <span className="text-[11px] text-gray-400 truncate">
+                              {user.customStatus}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
+            </>
           )}
         </div>
       </div>
