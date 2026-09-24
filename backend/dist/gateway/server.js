@@ -1,0 +1,149 @@
+import { WebSocketServer, WebSocket } from "ws";
+import { GatewayOpcode, GatewayEvent } from "./protocol.js";
+export class GatewayServer {
+    wss;
+    sessions = new Map();
+    heartbeatInterval = 41250; // Discord standard interval (ms)
+    constructor(port = 8080) {
+        this.wss = new WebSocketServer({ port });
+        this.setupListeners();
+        console.log(`[Gateway] Realtime Gateway listening on port ${port}`);
+    }
+    setupListeners() {
+        this.wss.on("connection", (ws) => {
+            const sessionId = Math.random().toString(36).substring(2, 15);
+            this.sessions.set(ws, {
+                sessionId,
+                lastHeartbeat: Date.now(),
+                authenticated: false,
+            });
+            // 1. Send Opcode 10: HELLO immediately on connection
+            this.send(ws, {
+                op: GatewayOpcode.HELLO,
+                d: { heartbeat_interval: this.heartbeatInterval },
+            });
+            ws.on("message", (data) => {
+                try {
+                    const payload = JSON.parse(data.toString());
+                    this.handlePayload(ws, payload);
+                }
+                catch {
+                    console.error("[Gateway] Failed to parse message");
+                }
+            });
+            ws.on("close", () => {
+                const session = this.sessions.get(ws);
+                if (session?.channelId) {
+                    // Notify room members that user left
+                    this.broadcastToVoiceChannel(session.channelId, ws, {
+                        op: GatewayOpcode.DISPATCH,
+                        t: GatewayEvent.VOICE_STATE_UPDATE,
+                        d: { userId: session.userId, channelId: null },
+                    });
+                }
+                this.sessions.delete(ws);
+            });
+        });
+    }
+    handlePayload(ws, payload) {
+        const session = this.sessions.get(ws);
+        if (!session)
+            return;
+        switch (payload.op) {
+            case GatewayOpcode.HEARTBEAT:
+                session.lastHeartbeat = Date.now();
+                this.send(ws, { op: GatewayOpcode.HEARTBEAT_ACK });
+                break;
+            case GatewayOpcode.IDENTIFY: {
+                const data = payload.d;
+                session.authenticated = true;
+                session.userId = data.userId || "u-" + Math.floor(1000 + Math.random() * 9000);
+                this.send(ws, {
+                    op: GatewayOpcode.DISPATCH,
+                    s: 1,
+                    t: GatewayEvent.READY,
+                    d: {
+                        session_id: session.sessionId,
+                        user: { id: session.userId, username: "User-" + session.userId.slice(-4) },
+                        guilds: [],
+                    },
+                });
+                break;
+            }
+            case GatewayOpcode.VOICE_STATE_UPDATE: {
+                const data = payload.d;
+                const oldChannel = session.channelId;
+                session.channelId = data.channelId || undefined;
+                if (oldChannel && oldChannel !== data.channelId) {
+                    // Notify peers in the previous voice channel that user left
+                    this.broadcastToVoiceChannel(oldChannel, ws, {
+                        op: GatewayOpcode.DISPATCH,
+                        t: GatewayEvent.VOICE_STATE_UPDATE,
+                        d: { userId: session.userId, channelId: null },
+                    });
+                }
+                if (data.channelId) {
+                    // 1. Tell all existing participants in this voice channel that a new peer joined
+                    this.broadcastToVoiceChannel(data.channelId, ws, {
+                        op: GatewayOpcode.DISPATCH,
+                        t: GatewayEvent.VOICE_STATE_UPDATE,
+                        d: { userId: session.userId, channelId: data.channelId },
+                    });
+                    // 2. Send the newly joined user the list of existing peers in this channel
+                    const existingPeers = [];
+                    for (const [peerWs, peerSession] of this.sessions.entries()) {
+                        if (peerWs !== ws && peerSession.channelId === data.channelId && peerSession.userId) {
+                            existingPeers.push(peerSession.userId);
+                        }
+                    }
+                    this.send(ws, {
+                        op: GatewayOpcode.DISPATCH,
+                        t: GatewayEvent.VOICE_SERVER_UPDATE,
+                        d: { channelId: data.channelId, peers: existingPeers },
+                    });
+                }
+                break;
+            }
+            case GatewayOpcode.VOICE_SIGNAL: {
+                // Forward WebRTC SDP offer, answer, or ICE candidate to the target peer
+                const data = payload.d;
+                for (const [peerWs, peerSession] of this.sessions.entries()) {
+                    if (peerSession.userId === data.targetUserId && peerWs.readyState === WebSocket.OPEN) {
+                        this.send(peerWs, {
+                            op: GatewayOpcode.DISPATCH,
+                            t: GatewayEvent.VOICE_SIGNAL,
+                            d: { senderUserId: session.userId, signal: data.signal },
+                        });
+                        break;
+                    }
+                }
+                break;
+            }
+            default:
+                console.log(`[Gateway] Unhandled Opcode: ${payload.op}`);
+        }
+    }
+    broadcastToVoiceChannel(channelId, senderWs, payload) {
+        for (const [peerWs, peerSession] of this.sessions.entries()) {
+            if (peerWs !== senderWs && peerSession.channelId === channelId && peerWs.readyState === WebSocket.OPEN) {
+                this.send(peerWs, payload);
+            }
+        }
+    }
+    broadcastEvent(eventName, data, recipientFilter) {
+        for (const [ws, session] of this.sessions.entries()) {
+            if (ws.readyState === WebSocket.OPEN && (!recipientFilter || recipientFilter(session))) {
+                this.send(ws, {
+                    op: GatewayOpcode.DISPATCH,
+                    t: eventName,
+                    d: data,
+                });
+            }
+        }
+    }
+    send(ws, payload) {
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(payload));
+        }
+    }
+}

@@ -1,0 +1,36 @@
+export var GatewayOpcode;
+(function (GatewayOpcode) {
+    GatewayOpcode[GatewayOpcode["DISPATCH"] = 0] = "DISPATCH";
+    GatewayOpcode[GatewayOpcode["HEARTBEAT"] = 1] = "HEARTBEAT";
+    GatewayOpcode[GatewayOpcode["IDENTIFY"] = 2] = "IDENTIFY";
+    GatewayOpcode[GatewayOpcode["PRESENCE_UPDATE"] = 3] = "PRESENCE_UPDATE";
+    GatewayOpcode[GatewayOpcode["VOICE_STATE_UPDATE"] = 4] = "VOICE_STATE_UPDATE";
+    GatewayOpcode[GatewayOpcode["VOICE_SIGNAL"] = 5] = "VOICE_SIGNAL";
+    GatewayOpcode[GatewayOpcode["RESUME"] = 6] = "RESUME";
+    GatewayOpcode[GatewayOpcode["RECONNECT"] = 7] = "RECONNECT";
+    GatewayOpcode[GatewayOpcode["REQUEST_GUILD_MEMBERS"] = 8] = "REQUEST_GUILD_MEMBERS";
+    GatewayOpcode[GatewayOpcode["INVALID_SESSION"] = 9] = "INVALID_SESSION";
+    GatewayOpcode[GatewayOpcode["HELLO"] = 10] = "HELLO";
+    GatewayOpcode[GatewayOpcode["HEARTBEAT_ACK"] = 11] = "HEARTBEAT_ACK";
+})(GatewayOpcode || (GatewayOpcode = {}));
+export var GatewayEvent;
+(function (GatewayEvent) {
+    GatewayEvent["READY"] = "READY";
+    GatewayEvent["RESUMED"] = "RESUMED";
+    GatewayEvent["MESSAGE_CREATE"] = "MESSAGE_CREATE";
+    GatewayEvent["MESSAGE_UPDATE"] = "MESSAGE_UPDATE";
+    GatewayEvent["MESSAGE_DELETE"] = "MESSAGE_DELETE";
+    GatewayEvent["CHANNEL_CREATE"] = "CHANNEL_CREATE";
+    GatewayEvent["CHANNEL_UPDATE"] = "CHANNEL_UPDATE";
+    GatewayEvent["CHANNEL_DELETE"] = "CHANNEL_DELETE";
+    GatewayEvent["GUILD_CREATE"] = "GUILD_CREATE";
+    GatewayEvent["GUILD_UPDATE"] = "GUILD_UPDATE";
+    GatewayEvent["GUILD_DELETE"] = "GUILD_DELETE";
+    GatewayEvent["GUILD_MEMBER_ADD"] = "GUILD_MEMBER_ADD";
+    GatewayEvent["GUILD_MEMBER_REMOVE"] = "GUILD_MEMBER_REMOVE";
+    GatewayEvent["PRESENCE_UPDATE"] = "PRESENCE_UPDATE";
+    GatewayEvent["TYPING_START"] = "TYPING_START";
+    GatewayEvent["VOICE_STATE_UPDATE"] = "VOICE_STATE_UPDATE";
+    GatewayEvent["VOICE_SERVER_UPDATE"] = "VOICE_SERVER_UPDATE";
+    GatewayEvent["VOICE_SIGNAL"] = "VOICE_SIGNAL";
+})(GatewayEvent || (GatewayEvent = {}));

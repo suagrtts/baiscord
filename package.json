@@ -1,0 +1,19 @@
+{
+  "name": "discord-clone-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Production-grade Discord clone monorepo",
+  "scripts": {
+    "dev": "echo \"Ready to configure workspaces\"",
+    "build": "echo \"Ready to build\""
+  },
+  "keywords": [
+    "discord-clone",
+    "webrtc",
+    "realtime",
+    "livekit",
+    "websockets"
+  ],
+  "author": "",
+  "license": "MIT"
+}
