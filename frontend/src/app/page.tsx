@@ -162,9 +162,14 @@ export default function DiscordApp() {
       });
   }, [setIsAuthenticated, setMyUserId, upsertUser]);
 
+  const handleVoiceGatewayEventRef = useRef(handleVoiceGatewayEvent);
+  useEffect(() => {
+    handleVoiceGatewayEventRef.current = handleVoiceGatewayEvent;
+  }, [handleVoiceGatewayEvent]);
+
   // 2. Connect to the Realtime Gateway WebSocket once authenticated
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !myUserId) return;
 
     const rawGatewayUrl =
       process.env.NEXT_PUBLIC_GATEWAY_URL ||
@@ -179,7 +184,8 @@ export default function DiscordApp() {
 
     ws.onopen = () => {
       setConnected(true);
-      const currentUser = users[myUserId];
+      const storeState = useAppStore.getState();
+      const currentUser = storeState.users[myUserId];
       // Send IDENTIFY opcode with user ID, token, username, and avatar
       ws.send(
         JSON.stringify({
@@ -210,10 +216,12 @@ export default function DiscordApp() {
         }
 
         if (payload.op === 0) {
+          const store = useAppStore.getState();
+
           if (payload.t === "READY") {
             if (payload.d?.users) {
               for (const u of payload.d.users) {
-                upsertUser({
+                store.upsertUser({
                   id: u.id,
                   username: u.username,
                   discriminator: u.id.slice(-4),
@@ -228,23 +236,23 @@ export default function DiscordApp() {
               for (const [chId, msgs] of Object.entries(payload.d.messages)) {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 for (const m of (msgs as any[])) {
-                  addMessage(chId, m);
+                  store.addMessage(chId, m);
                 }
               }
             }
             if (payload.d?.voiceStates) {
-              setAllVoiceStates(payload.d.voiceStates);
+              store.setAllVoiceStates(payload.d.voiceStates);
             }
           }
 
           if (payload.t === "MESSAGE_CREATE" && payload.d) {
             const { channelId, id, author, content, timestamp } = payload.d;
-            addMessage(channelId, { id, author, content, timestamp });
+            store.addMessage(channelId, { id, author, content, timestamp });
           }
 
           if (payload.t === "USER_UPDATE" && payload.d) {
             const u = payload.d;
-            upsertUser({
+            store.upsertUser({
               id: u.id,
               username: u.username,
               discriminator: u.id.slice(-4),
@@ -258,7 +266,7 @@ export default function DiscordApp() {
           if (payload.t === "VOICE_STATE_UPDATE" && payload.d) {
             const { userId, channelId, user } = payload.d;
             if (user) {
-              upsertUser({
+              store.upsertUser({
                 id: user.id,
                 username: user.username,
                 discriminator: user.id.slice(-4),
@@ -269,13 +277,13 @@ export default function DiscordApp() {
               });
             }
             if (userId) {
-              setMemberVoiceChannel(userId, channelId || null);
+              store.setMemberVoiceChannel(userId, channelId || null);
             }
           }
 
           if (payload.t === "VOICE_SERVER_UPDATE" && payload.d?.peerUsers) {
             for (const u of payload.d.peerUsers) {
-              upsertUser({
+              store.upsertUser({
                 id: u.id,
                 username: u.username,
                 discriminator: u.id.slice(-4),
@@ -293,7 +301,7 @@ export default function DiscordApp() {
             payload.t === "VOICE_STATE_UPDATE" ||
             payload.t === "VOICE_SIGNAL"
           ) {
-            handleVoiceGatewayEvent(payload);
+            handleVoiceGatewayEventRef.current(payload);
           }
         }
       } catch (err) {
@@ -302,17 +310,10 @@ export default function DiscordApp() {
     };
 
     ws.onclose = () => setConnected(false);
-    return () => ws.close();
-  }, [
-    handleVoiceGatewayEvent,
-    isAuthenticated,
-    myUserId,
-    setConnected,
-    addMessage,
-    users,
-    setMemberVoiceChannel,
-    setAllVoiceStates,
-  ]);
+    return () => {
+      ws.close();
+    };
+  }, [isAuthenticated, myUserId, setConnected]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
