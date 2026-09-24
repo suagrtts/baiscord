@@ -28,6 +28,53 @@ usersDb.set("dev@discord.local", {
         avatar: "https://api.dicebear.com/7.x/bottts/svg?seed=FrontendNinja",
     },
 });
+import fs from "fs";
+import path from "path";
+const DATA_DIR = path.resolve(process.cwd(), "data");
+const USERS_FILE = path.join(DATA_DIR, "users.json");
+function loadUsersFromDisk() {
+    try {
+        if (!fs.existsSync(DATA_DIR)) {
+            fs.mkdirSync(DATA_DIR, { recursive: true });
+        }
+        if (fs.existsSync(USERS_FILE)) {
+            const content = fs.readFileSync(USERS_FILE, "utf-8");
+            const list = JSON.parse(content);
+            for (const item of list) {
+                usersDb.set(item.user.email.toLowerCase(), {
+                    user: {
+                        ...item.user,
+                        permissions: BigInt(item.user.permissions),
+                    },
+                    passwordHash: item.passwordHash,
+                });
+            }
+            console.log(`[Auth] Loaded ${list.length} persisted user(s) from disk.`);
+        }
+    }
+    catch (err) {
+        console.warn("[Auth] Failed to load users from disk:", err);
+    }
+}
+function saveUsersToDisk() {
+    try {
+        if (!fs.existsSync(DATA_DIR)) {
+            fs.mkdirSync(DATA_DIR, { recursive: true });
+        }
+        const serializable = Array.from(usersDb.values()).map((v) => ({
+            passwordHash: v.passwordHash,
+            user: {
+                ...v.user,
+                permissions: v.user.permissions.toString(),
+            },
+        }));
+        fs.writeFileSync(USERS_FILE, JSON.stringify(serializable, null, 2), "utf-8");
+    }
+    catch (err) {
+        console.warn("[Auth] Failed to write users to disk:", err);
+    }
+}
+loadUsersFromDisk();
 export async function findUserRecordByEmail(email) {
     try {
         const res = await pool.query("SELECT id, username, discriminator, email, password_hash, avatar_url, permissions FROM users WHERE LOWER(email) = LOWER($1)", [email]);
@@ -51,6 +98,28 @@ export async function findUserRecordByEmail(email) {
     }
     return usersDb.get(email.toLowerCase()) || null;
 }
+export async function findUserRecordByUsername(username) {
+    const cleanUsername = username.trim().toLowerCase();
+    try {
+        const res = await pool.query("SELECT id, username, discriminator, email, avatar_url, permissions FROM users WHERE LOWER(username) = LOWER($1)", [cleanUsername]);
+        if (res.rows.length > 0) {
+            const row = res.rows[0];
+            return {
+                id: row.id,
+                username: row.username,
+                discriminator: row.discriminator,
+                email: row.email,
+                permissions: BigInt(row.permissions || "0"),
+                avatar: row.avatar_url,
+            };
+        }
+    }
+    catch (err) {
+        // DB not available, fall back to memory
+    }
+    const record = Array.from(usersDb.values()).find((r) => r.user.username.toLowerCase() === cleanUsername);
+    return record ? record.user : null;
+}
 export async function findUserById(id) {
     try {
         const res = await pool.query("SELECT id, username, discriminator, email, avatar_url, permissions FROM users WHERE id = $1", [id]);
@@ -73,8 +142,9 @@ export async function findUserById(id) {
     return record ? record.user : null;
 }
 export async function saveUserToDb(user, passwordHash) {
-    // Always update in-memory map
+    // Always update in-memory map and persist to disk
     usersDb.set(user.email.toLowerCase(), { user, passwordHash });
+    saveUsersToDisk();
     try {
         await pool.query(`INSERT INTO users (id, username, discriminator, email, password_hash, avatar_url, permissions)
        VALUES ($1, $2, $3, $4, $5, $6, $7)

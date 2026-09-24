@@ -77,24 +77,62 @@ export default function DiscordApp() {
 
   // 1. Check existing authentication on mount
   useEffect(() => {
-    const token = typeof window !== "undefined" ? localStorage.getItem("discord_token") : null;
-    if (!token) {
+    const savedToken = typeof window !== "undefined" ? localStorage.getItem("discord_token") : null;
+    const savedUserStr = typeof window !== "undefined" ? localStorage.getItem("discord_user") : null;
+
+    if (!savedToken) {
       setIsAuthenticated(false);
       setShowAuthModal(true);
       setAuthChecked(true);
       return;
     }
 
+    // Instantly restore user session from localStorage so hard reset doesn't show auth prompt
+    if (savedUserStr) {
+      try {
+        const savedUser = JSON.parse(savedUserStr);
+        setMyUserId(savedUser.id);
+        setIsAuthenticated(true);
+        upsertUser({
+          id: savedUser.id,
+          username: savedUser.username,
+          discriminator: savedUser.discriminator || savedUser.id.slice(-4),
+          avatar: savedUser.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${savedUser.username}`,
+          bannerColor: "#5865F2",
+          status: "online",
+          customStatus: "Logged in",
+          bio: `Member since ${new Date().getFullYear()}`,
+          roles: [
+            {
+              id: "r-auth",
+              name: savedUser.permissions === "8" ? "Admin" : "Member",
+              color: savedUser.permissions === "8" ? "#e91e63" : "#3498db",
+            },
+          ],
+        });
+      } catch {}
+    }
+
     const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001").replace(/\/+$/, "");
     fetch(`${apiBase}/api/auth/me`, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${savedToken}` },
     })
       .then((res) => {
-        if (!res.ok) throw new Error("Token expired");
+        if (res.status === 401 || res.status === 403) {
+          // Token is genuinely invalid or expired
+          localStorage.removeItem("discord_token");
+          localStorage.removeItem("discord_user");
+          setIsAuthenticated(false);
+          setShowAuthModal(true);
+          return null;
+        }
+        if (!res.ok) throw new Error("Server error");
         return res.json();
       })
       .then((data) => {
+        if (!data?.user) return;
         const user = data.user;
+        localStorage.setItem("discord_user", JSON.stringify(user));
         setMyUserId(user.id);
         setIsAuthenticated(true);
         upsertUser({
@@ -115,10 +153,9 @@ export default function DiscordApp() {
           ],
         });
       })
-      .catch(() => {
-        localStorage.removeItem("discord_token");
-        setIsAuthenticated(false);
-        setShowAuthModal(true);
+      .catch((err) => {
+        // Network error or Render sleeping: preserve local session
+        console.warn("[Auth] Background verify error (retaining local session):", err);
       })
       .finally(() => {
         setAuthChecked(true);

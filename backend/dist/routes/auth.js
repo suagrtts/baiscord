@@ -2,7 +2,7 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { defaultSnowflake } from "../utils/snowflake.js";
 import { Permissions } from "../utils/permissions.js";
-import { generateToken, authenticateToken, requirePermission, findUserRecordByEmail, saveUserToDb, } from "../middleware/auth.js";
+import { generateToken, authenticateToken, requirePermission, findUserRecordByEmail, findUserRecordByUsername, saveUserToDb, } from "../middleware/auth.js";
 export const authRouter = Router();
 // POST /api/auth/register
 authRouter.post("/register", async (req, res) => {
@@ -11,9 +11,14 @@ authRouter.post("/register", async (req, res) => {
         res.status(400).json({ error: "username, email, and password are required" });
         return;
     }
-    const existing = await findUserRecordByEmail(email);
-    if (existing) {
+    const existingEmail = await findUserRecordByEmail(email);
+    if (existingEmail) {
         res.status(409).json({ error: "Email is already registered" });
+        return;
+    }
+    const existingUsername = await findUserRecordByUsername(username);
+    if (existingUsername) {
+        res.status(409).json({ error: "Username is already taken. Please choose another username." });
         return;
     }
     const userId = defaultSnowflake.nextId();

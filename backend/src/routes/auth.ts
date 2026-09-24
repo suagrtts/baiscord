@@ -8,6 +8,7 @@ import {
   authenticateToken,
   requirePermission,
   findUserRecordByEmail,
+  findUserRecordByUsername,
   saveUserToDb,
   AuthenticatedRequest,
   AuthUser,
@@ -24,9 +25,15 @@ authRouter.post("/register", async (req: Request, res: Response): Promise<void> 
     return;
   }
 
-  const existing = await findUserRecordByEmail(email);
-  if (existing) {
+  const existingEmail = await findUserRecordByEmail(email);
+  if (existingEmail) {
     res.status(409).json({ error: "Email is already registered" });
+    return;
+  }
+
+  const existingUsername = await findUserRecordByUsername(username);
+  if (existingUsername) {
+    res.status(409).json({ error: "Username is already taken. Please choose another username." });
     return;
   }
 

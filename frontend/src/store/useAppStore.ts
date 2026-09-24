@@ -268,6 +268,7 @@ export const useAppStore = create<AppState>((set) => ({
   setIsAuthenticated: (status) => set({ isAuthenticated: status }),
   logout: () => {
     localStorage.removeItem("discord_token");
+    localStorage.removeItem("discord_user");
     set({
       isAuthenticated: false,
       voice: {

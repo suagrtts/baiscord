@@ -68,8 +68,9 @@ export function AuthModal({ isOpen, onClose, isRequired = false }: AuthModalProp
         throw new Error(data.error || "Authentication failed");
       }
 
-      // Store JWT token locally
+      // Store JWT token and user profile locally for instant persistence
       localStorage.setItem("discord_token", data.token);
+      localStorage.setItem("discord_user", JSON.stringify(data.user));
 
       // Update store with authenticated user
       const user = data.user;
