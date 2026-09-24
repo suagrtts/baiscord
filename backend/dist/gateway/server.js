@@ -64,16 +64,46 @@ export class GatewayServer {
                 const data = payload.d;
                 session.authenticated = true;
                 session.userId = data.userId || "u-" + Math.floor(1000 + Math.random() * 9000);
+                session.username = data.username || "User-" + session.userId.slice(-4);
+                session.avatar = data.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${session.username}`;
+                // Collect all online users currently connected to the gateway
+                const onlineUsers = [];
+                for (const [_, s] of this.sessions.entries()) {
+                    if (s.userId && s.username) {
+                        onlineUsers.push({
+                            id: s.userId,
+                            username: s.username,
+                            avatar: s.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${s.username}`,
+                            status: "online",
+                        });
+                    }
+                }
                 this.send(ws, {
                     op: GatewayOpcode.DISPATCH,
                     s: 1,
                     t: GatewayEvent.READY,
                     d: {
                         session_id: session.sessionId,
-                        user: { id: session.userId, username: "User-" + session.userId.slice(-4) },
+                        user: { id: session.userId, username: session.username, avatar: session.avatar },
+                        users: onlineUsers,
                         guilds: [],
                     },
                 });
+                // Notify all other clients that a new user connected with their profile
+                for (const [otherWs, otherSession] of this.sessions.entries()) {
+                    if (otherWs !== ws && otherWs.readyState === WebSocket.OPEN) {
+                        this.send(otherWs, {
+                            op: GatewayOpcode.DISPATCH,
+                            t: "USER_UPDATE",
+                            d: {
+                                id: session.userId,
+                                username: session.username,
+                                avatar: session.avatar,
+                                status: "online",
+                            },
+                        });
+                    }
+                }
                 break;
             }
             case GatewayOpcode.VOICE_STATE_UPDATE: {
@@ -85,7 +115,15 @@ export class GatewayServer {
                     this.broadcastToVoiceChannel(oldChannel, ws, {
                         op: GatewayOpcode.DISPATCH,
                         t: GatewayEvent.VOICE_STATE_UPDATE,
-                        d: { userId: session.userId, channelId: null },
+                        d: {
+                            userId: session.userId,
+                            channelId: null,
+                            user: {
+                                id: session.userId,
+                                username: session.username,
+                                avatar: session.avatar,
+                            },
+                        },
                     });
                 }
                 if (data.channelId) {
@@ -93,19 +131,37 @@ export class GatewayServer {
                     this.broadcastToVoiceChannel(data.channelId, ws, {
                         op: GatewayOpcode.DISPATCH,
                         t: GatewayEvent.VOICE_STATE_UPDATE,
-                        d: { userId: session.userId, channelId: data.channelId },
+                        d: {
+                            userId: session.userId,
+                            channelId: data.channelId,
+                            user: {
+                                id: session.userId,
+                                username: session.username,
+                                avatar: session.avatar,
+                            },
+                        },
                     });
                     // 2. Send the newly joined user the list of existing peers in this channel
                     const existingPeers = [];
+                    const existingPeerUsers = [];
                     for (const [peerWs, peerSession] of this.sessions.entries()) {
                         if (peerWs !== ws && peerSession.channelId === data.channelId && peerSession.userId) {
                             existingPeers.push(peerSession.userId);
+                            existingPeerUsers.push({
+                                id: peerSession.userId,
+                                username: peerSession.username || `User-${peerSession.userId.slice(-4)}`,
+                                avatar: peerSession.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${peerSession.userId}`,
+                            });
                         }
                     }
                     this.send(ws, {
                         op: GatewayOpcode.DISPATCH,
                         t: GatewayEvent.VOICE_SERVER_UPDATE,
-                        d: { channelId: data.channelId, peers: existingPeers },
+                        d: {
+                            channelId: data.channelId,
+                            peers: existingPeers,
+                            peerUsers: existingPeerUsers,
+                        },
                     });
                 }
                 break;

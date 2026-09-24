@@ -59,6 +59,19 @@ export function useVoiceClient(wsRef: React.RefObject<WebSocket | null>) {
     }
   }, []);
 
+  // Ensure local tracks are attached before negotiating
+  const ensureLocalTracks = useCallback((pc: RTCPeerConnection) => {
+    if (localStreamRef.current) {
+      const senders = pc.getSenders();
+      localStreamRef.current.getAudioTracks().forEach((track) => {
+        const alreadyAdded = senders.some((s) => s.track?.id === track.id);
+        if (!alreadyAdded) {
+          pc.addTrack(track, localStreamRef.current!);
+        }
+      });
+    }
+  }, []);
+
   // Helper to create or get an RTCPeerConnection
   const getOrCreatePeer = useCallback(
     (targetUserId: string) => {
@@ -70,11 +83,7 @@ export function useVoiceClient(wsRef: React.RefObject<WebSocket | null>) {
       peersRef.current[targetUserId] = pc;
 
       // Add local audio tracks to peer connection
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((track) => {
-          pc.addTrack(track, localStreamRef.current!);
-        });
-      }
+      ensureLocalTracks(pc);
 
       // Relay ICE candidates over the WebSocket gateway
       pc.onicecandidate = (event) => {
@@ -93,38 +102,97 @@ export function useVoiceClient(wsRef: React.RefObject<WebSocket | null>) {
 
       // Handle remote incoming audio stream
       pc.ontrack = (event) => {
-        console.log(`[WebRTC] Received audio track from peer: ${targetUserId}`);
+        console.log(`[WebRTC] Received audio track from peer: ${targetUserId}`, event);
+        const remoteTrack = event.track;
+
         let audio = audioElementsRef.current[targetUserId];
         if (!audio) {
           audio = document.createElement("audio");
           audio.autoplay = true;
-          // In some modern browsers, elements must be attached to the DOM
-          audio.style.display = "none";
+          audio.setAttribute("playsinline", "true");
+          audio.setAttribute("webkit-playsinline", "true");
+          // Never use display:none as mobile browsers disable audio playback
+          audio.style.position = "fixed";
+          audio.style.top = "-9999px";
+          audio.style.left = "-9999px";
+          audio.style.width = "1px";
+          audio.style.height = "1px";
+          audio.style.opacity = "0.01";
+          audio.style.pointerEvents = "none";
           document.body.appendChild(audio);
           audioElementsRef.current[targetUserId] = audio;
         }
 
-        const stream = event.streams[0] || new MediaStream([event.track]);
-        audio.srcObject = stream;
-        audio.muted = useAppStore.getState().voice.isDeafened;
+        const remoteStream = event.streams[0] || new MediaStream([remoteTrack]);
+        audio.srcObject = remoteStream;
+        audio.volume = 1.0;
+        audio.muted = false;
 
-        // Explicitly trigger play to bypass browser autoplay policy
-        audio.play().catch((err) => {
-          console.warn("[WebRTC] Autoplay waiting for interaction:", err);
-          const resumeAudio = () => {
-            audio.play().catch(() => {});
-            window.removeEventListener("click", resumeAudio);
-            window.removeEventListener("touchstart", resumeAudio);
-          };
-          window.addEventListener("click", resumeAudio, { once: true });
-          window.addEventListener("touchstart", resumeAudio, { once: true });
-        });
+        const playAudio = () => {
+          audio.play().catch((err) => {
+            console.warn("[WebRTC] Autoplay pending user gesture:", err);
+            const unlock = () => {
+              audio.play().catch(() => {});
+              window.removeEventListener("click", unlock);
+              window.removeEventListener("touchstart", unlock);
+            };
+            window.addEventListener("click", unlock, { once: true });
+            window.addEventListener("touchstart", unlock, { once: true });
+          });
+        };
+
+        playAudio();
+
+        remoteTrack.onunmute = () => {
+          console.log(`[WebRTC] Track unmuted for ${targetUserId}`);
+          playAudio();
+        };
+
+        // Direct hardware speaker routing and remote speaking activity indicator
+        try {
+          const AudioContextClass =
+            window.AudioContext ||
+            (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+          if (AudioContextClass) {
+            const remoteCtx = new AudioContextClass();
+            if (remoteCtx.state === "suspended") {
+              const resumeCtx = () => {
+                remoteCtx.resume().catch(() => {});
+                window.removeEventListener("click", resumeCtx);
+                window.removeEventListener("touchstart", resumeCtx);
+              };
+              window.addEventListener("click", resumeCtx, { once: true });
+              window.addEventListener("touchstart", resumeCtx, { once: true });
+            }
+
+            const remoteSource = remoteCtx.createMediaStreamSource(remoteStream);
+            const remoteAnalyser = remoteCtx.createAnalyser();
+            remoteAnalyser.fftSize = 256;
+            remoteSource.connect(remoteAnalyser);
+            // Route through hardware speaker destination
+            remoteSource.connect(remoteCtx.destination);
+
+            const bufferLength = remoteAnalyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+
+            const detectRemoteSpeaking = () => {
+              if (remoteTrack.readyState === "ended") return;
+              remoteAnalyser.getByteFrequencyData(dataArray);
+              const avg = dataArray.reduce((acc, v) => acc + v, 0) / bufferLength;
+              setSpeaking(targetUserId, avg > 12);
+              requestAnimationFrame(detectRemoteSpeaking);
+            };
+            detectRemoteSpeaking();
+          }
+        } catch (e) {
+          console.warn("[WebRTC] Web Audio speaker setup error:", e);
+        }
       };
 
       return pc;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [wsRef]
+    [wsRef, ensureLocalTracks]
   );
 
   // Join a voice channel
@@ -206,6 +274,7 @@ export function useVoiceClient(wsRef: React.RefObject<WebSocket | null>) {
         for (const peerId of peers) {
           try {
             const pc = getOrCreatePeer(peerId);
+            ensureLocalTracks(pc);
             const offer = await pc.createOffer({
               offerToReceiveAudio: true,
             });
@@ -273,6 +342,7 @@ export function useVoiceClient(wsRef: React.RefObject<WebSocket | null>) {
             }
             delete pendingCandidatesRef.current[senderUserId];
 
+            ensureLocalTracks(pc);
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
 
@@ -311,7 +381,7 @@ export function useVoiceClient(wsRef: React.RefObject<WebSocket | null>) {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [getOrCreatePeer, myUserId, updateVoiceMembers, wsRef]
+    [getOrCreatePeer, myUserId, updateVoiceMembers, wsRef, ensureLocalTracks]
   );
 
   // Mute / Unmute local audio track

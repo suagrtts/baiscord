@@ -140,13 +140,16 @@ export default function DiscordApp() {
 
     ws.onopen = () => {
       setConnected(true);
-      // Send IDENTIFY opcode with user ID and token
+      const currentUser = users[myUserId];
+      // Send IDENTIFY opcode with user ID, token, username, and avatar
       ws.send(
         JSON.stringify({
           op: 2,
           d: {
             token: token || "sample-auth-token",
             userId: myUserId,
+            username: currentUser?.username,
+            avatar: currentUser?.avatar,
             properties: { os: "web", browser: "react", device: "desktop" },
           },
         })
@@ -168,6 +171,60 @@ export default function DiscordApp() {
         }
 
         if (payload.op === 0) {
+          if (payload.t === "READY" && payload.d?.users) {
+            for (const u of payload.d.users) {
+              upsertUser({
+                id: u.id,
+                username: u.username,
+                discriminator: u.id.slice(-4),
+                avatar: u.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${u.username}`,
+                bannerColor: "#5865F2",
+                status: "online",
+                roles: [{ id: "r-mem", name: "Member", color: "#3498db" }],
+              });
+            }
+          }
+
+          if (payload.t === "USER_UPDATE" && payload.d) {
+            const u = payload.d;
+            upsertUser({
+              id: u.id,
+              username: u.username,
+              discriminator: u.id.slice(-4),
+              avatar: u.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${u.username}`,
+              bannerColor: "#5865F2",
+              status: "online",
+              roles: [{ id: "r-mem", name: "Member", color: "#3498db" }],
+            });
+          }
+
+          if (payload.t === "VOICE_STATE_UPDATE" && payload.d?.user) {
+            const u = payload.d.user;
+            upsertUser({
+              id: u.id,
+              username: u.username,
+              discriminator: u.id.slice(-4),
+              avatar: u.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${u.username}`,
+              bannerColor: "#5865F2",
+              status: "online",
+              roles: [{ id: "r-mem", name: "Member", color: "#3498db" }],
+            });
+          }
+
+          if (payload.t === "VOICE_SERVER_UPDATE" && payload.d?.peerUsers) {
+            for (const u of payload.d.peerUsers) {
+              upsertUser({
+                id: u.id,
+                username: u.username,
+                discriminator: u.id.slice(-4),
+                avatar: u.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${u.username}`,
+                bannerColor: "#5865F2",
+                status: "online",
+                roles: [{ id: "r-mem", name: "Member", color: "#3498db" }],
+              });
+            }
+          }
+
           // Handle voice-related events (VOICE_SERVER_UPDATE, VOICE_STATE_UPDATE, VOICE_SIGNAL)
           if (
             payload.t === "VOICE_SERVER_UPDATE" ||
